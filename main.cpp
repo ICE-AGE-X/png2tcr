@@ -340,11 +340,10 @@ int main(int argc, const char * argv[]) {
 //    unsigned short a=0xf;
 //    unsigned short b=0x1;
 //    unsigned short r= conv8to16(&a, &b);
-    fcr2png(argv[1],argv[2]);
-    return 0;
+//    return 0;
     if(argc !=4)
     {
-        printf("useage:png2tcr -op *.tcr *.png\n");
+        printf("usage:png2tcr -op *.tcr *.png\n");
         printf("       png2tcr -ot *.png *.tcr\n");
         return 0;
     }
@@ -355,7 +354,11 @@ int main(int argc, const char * argv[]) {
     }else if( arg1=="-ot")
     {
         png2tcr(arg2,arg3);
+    }else if(arg1=="-of")
+    {
+        fcr2png(arg2,arg3);
     }
+    
     
     return 0;
 }
