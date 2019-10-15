@@ -29,6 +29,45 @@ struct TcrHeader{
     int imgDataOffset=0x80;
     int zero[26]={0};
 };
+struct FcrHeader{
+    int magic=0x61524346;
+    int magic2=0x20;
+    int uvOffset=0;
+    int imgOffset=0;
+    short fontSize=0;
+    short imgWidth=0;
+    short unknown2=0;
+    short unknown=0;
+    short imgHeight=0;
+    short count=0;
+    unsigned int baseImgOffset=0;
+};
+
+struct UV{
+    float x;
+    float y;
+    float width;
+    float height;
+    short zero;
+    short width2;
+    short height2;
+    unsigned short unicode;
+    int zero1;
+    int zero2;
+};
+
+struct UVConv{
+    int x;
+    int y;
+    int width;
+    int height;
+    short zero=0;
+    short width2;
+    short height2;
+    unsigned short unicode;
+    int zero1=0;
+    int zero2=0;
+};
 
 const unsigned short tileOrder[BLOCK_SIZE]={
     0, 1, 4, 5, 16, 17, 20, 21,
@@ -86,6 +125,16 @@ unsigned int convRGBA4444toRGBA8888(const unsigned int &value)
     unsigned int a=conv4to8(value&0xf)<<24;
     
     return r|g|b|a;
+}
+
+unsigned int convL4toRGBA8888(const unsigned int &value)
+{
+    int r=(value*0x11)&0xff;
+    int g=r;
+    int b=r;
+    int a=255;
+//    int result=;
+    return r+(g<<8)+(b<<16)+(a<<24);
 }
 
 unsigned int convCharToInt(const unsigned char *offset)
@@ -164,14 +213,8 @@ bool tcr2png(const string &inPath,const string &outPath)
         
     }
     infile.close();
-    
-//    ofstream os(outPath);
-//    if(!os.is_open())
-//        return false;
     stbi_flip_vertically_on_write(true);
     stbi_write_png(outPath.c_str(), width, height, 4, (const void*)&linData, 0);
-//    os.write((const char *)&linData, sizeof(linData));
-//    os.close();
     return true;
 }
 
@@ -224,10 +267,81 @@ bool png2tcr(string inPath,string outPath)
     return true;
 }
 
+void fcr2png(const string &path,const string & outPath)
+{
+    ifstream infile(path);
+    if(!infile.is_open())
+        return;
+    FcrHeader fh;
+    infile.read((char * ) &fh, sizeof(fh));
+    infile.seekg(fh.uvOffset);
+    UV uvs[fh.count];
+    infile.read((char *)uvs, sizeof(uvs));
+    
+    UVConv uvcs[fh.count];
+    for (int i=0; i<fh.count; i++) {
+        uvcs[i].x=uvs[i].x*fh.imgWidth;
+        uvcs[i].y=uvs[i].y*fh.imgHeight;//(fh.imgWidth-fh.baseImgOffset)+fh.baseImgOffset;
+        uvcs[i].width=uvs[i].width*fh.imgWidth;
+        uvcs[i].height=uvs[i].height*fh.imgHeight;//(fh.imgWidth-fh.baseImgOffset);
+        
+        uvcs[i].width2=uvs[i].width2;
+        uvcs[i].height2=uvs[i].height2;
+        uvcs[i].unicode=uvs[i].unicode;
+        printf("x:%d y:%d width:%d height:%d unicode:%d\n",uvcs[i].x,uvcs[i].y,uvcs[i].width,uvcs[i].height,uvcs[i].unicode);
+        
+    }
+    //调整到图片数据 的位置
+    infile.seekg(fh.imgOffset, ios_base::beg);
+    
+    //半字节 代表一个点
+    unsigned char data[fh.imgWidth*fh.imgHeight/2];
+//    unsigned long len=sizeof(data);
+    infile.read((char*)data, sizeof(data));
+    unsigned int * tileData=(unsigned int *)malloc(fh.imgWidth*fh.imgHeight*sizeof(unsigned int));//[fh.imgWidth*fh.imgHeight];
+    memset(tileData, 0, fh.imgWidth*fh.imgHeight*sizeof(unsigned int));
+    for (int i=0;i<fh.imgWidth*fh.imgHeight/2; i++) {
+        tileData[i*2]=convL4toRGBA8888(data[i]&0xf);
+        tileData[i*2+1]=convL4toRGBA8888(data[i]>>4);
+        //        printf("%d",i>>1);
+    }
+    
+    
+    unsigned int linData[fh.imgWidth*fh.imgHeight];
+    unsigned int tileAry[BLOCK_SIZE];
+    unsigned int blockAry[BLOCK_SIZE];
+    int x=0,y=0;
+    for (int i=0; i<fh.imgWidth*fh.imgHeight; i+=BLOCK_SIZE) {
+        memcpy(tileAry,tileData+i, sizeof(tileAry));
+        tileToBlock(tileAry, blockAry);
+        for (int sy=0; sy<BLOCK_WIDTH; sy++) {
+            for (int sx=0; sx<BLOCK_WIDTH; sx++) {
+                linData[sx+x+(sy+y)*fh.imgWidth]=blockAry[sx+sy*BLOCK_WIDTH];
+            }
+        }
+        x+=BLOCK_WIDTH;
+        if(x>=fh.imgWidth/BLOCK_SIZE)
+        {
+            x=0;
+            y+=BLOCK_WIDTH;
+        }
+        
+    }
+    streampos s=infile.tellg();
+    cout<<"pos:"<<s<<endl;
+    infile.close();
+    stbi_flip_vertically_on_write(true);
+    stbi_write_png(outPath.c_str(), fh.imgWidth, fh.imgHeight, 4, (const void*)&linData, 0);
+    //
+//    printf("aaa");
+}
+
 int main(int argc, const char * argv[]) {
 //    unsigned short a=0xf;
 //    unsigned short b=0x1;
 //    unsigned short r= conv8to16(&a, &b);
+    fcr2png(argv[1],argv[2]);
+    return 0;
     if(argc !=4)
     {
         printf("useage:png2tcr -op *.tcr *.png\n");
